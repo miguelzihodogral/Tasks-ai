@@ -1,0 +1,452 @@
+import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
+import { Upload, Camera, Send, Loader2, BookOpen, CheckCircle, FileText, Bot, User, X } from 'lucide-react';
+
+// Chave API fornecida pelo usuário, mantida para garantir a autenticação (evitar erro 401).
+const apiKey = "AIzaSyCE_c64RxdBan1OsRUA0jP57mXgJZb-UpM"; 
+const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+
+// Estrutura de dados para o resultado da análise (mantida para organização)
+const responseSchema = {
+    type: "ARRAY",
+    items: {
+        type: "OBJECT",
+        properties: {
+            "fileName": { "type": "STRING", description: "Nome original do arquivo (e.g., Imagem 1)" },
+            "type": { "type": "STRING", enum: ["TAREFA", "PÁGINA INFORMATIVA", "NÃO RELEVANTE"], description: "TAREFA, PÁGINA INFORMATIVA ou NÃO RELEVANTE" },
+            "summary": { "type": "STRING", description: "Um breve resumo do conteúdo da imagem (e.g., Tarefa 11 ou Introdução ao Capítulo 3)" },
+            "items": {
+                "type": "ARRAY",
+                "description": "Array de pares pergunta/resposta, somente se type for TAREFA.",
+                "items": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "question": { "type": "STRING", description: "A pergunta extraída." },
+                        "answer": { "type": "STRING", description: "A resposta direta e curta à pergunta." },
+                        "justification": { "type": "STRING", description: "Justificativa breve da resposta. VAZIA se não solicitada pelo usuário." }
+                    }
+                }
+            },
+            "generalResponse": { "type": "STRING", description: "Uma resposta em texto livre se a imagem for 'PÁGINA INFORMATIVA' ou 'NÃO RELEVANTE', ou se houver um erro na análise." }
+        },
+        required: ["fileName", "type", "summary", "generalResponse"]
+    }
+};
+
+/**
+ * Converte um arquivo File em uma string Base64.
+ */
+const fileToBase64 = (file) => {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = () => resolve(reader.result.split(',')[1]);
+        reader.onerror = (error) => reject(error);
+    });
+};
+
+/**
+ * Função auxiliar para retry com backoff exponencial 
+ */
+const fetchWithRetry = async (url, options, retries = 3) => {
+    for (let i = 0; i < retries; i++) {
+        try {
+            const response = await fetch(url, options);
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+            return response;
+        } catch (error) {
+            if (i === retries - 1) throw error;
+            // Espera antes de tentar novamente (1s, 2s, 4s)
+            await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, i)));
+        }
+    }
+};
+
+// Componente para exibir os resultados da Tarefa dentro do chat (Memoizado para performance)
+const StructuredResult = React.memo(({ result, index }) => {
+    const isTask = result.type === 'TAREFA';
+    const Icon = isTask ? BookOpen : FileText;
+    const color = isTask ? 'text-green-400' : 'text-gray-400';
+
+    return ( // JSX return was missing or broken
+        <div className="bg-gray-700/50 p-4 rounded-lg shadow-inner">
+            <div className="flex items-center space-x-2 mb-3 border-b border-gray-600 pb-2">
+                <Icon className={color} size={18} />
+                <h4 className={`text-base font-semibold ${color}`}>
+                    {result.type} {result.summary ? `(${result.summary})` : ''}
+                </h4>
+                <span className="text-xs text-gray-400 ml-auto">({result.fileName})</span>
+            </div>
+
+            {isTask && result.items && result.items.length > 0 ? (
+                <div className="space-y-4">
+                    {result.items.map((item, qIndex) => (
+                        <div key={qIndex} className="pl-3 py-1 border-l-2 border-indigo-500">
+                            <p className="font-medium text-gray-300 text-sm">
+                                <span className="font-bold text-indigo-300">Q{qIndex + 1}:</span> {item.question}
+                            </p>
+                            <div className="mt-1 ml-2">
+                                <p className="text-green-400 font-bold text-sm flex items-center">
+                                    <CheckCircle size={14} className="mr-1" /> Resposta:
+                                </p>
+                                <p className="text-white text-sm ml-5">{item.answer}</p>
+                                
+                                {/* Apenas renderiza a Justificativa se o campo não estiver vazio ou for '-' */}
+                                {item.justification && item.justification.trim() !== '' && item.justification.trim() !== '-' && (
+                                    <p className="text-xs text-gray-400 italic mt-1 ml-5">
+                                        <span className="font-semibold text-gray-300">Justificativa:</span> {item.justification}
+                                    </p>
+                                )}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            ) : (
+                <p className="text-gray-400 text-sm italic">{result.generalResponse}</p>
+            )}
+        </div>
+    ); // End of StructuredResult return
+});
+
+// Componente de Renderização de Mensagem (Memoizado para performance)
+const ChatMessage = React.memo(({ message, removeFile }) => {
+    const isUser = message.role === 'user';
+    const Icon = isUser ? User : Bot;
+    const bgColor = isUser ? 'bg-indigo-700' : 'bg-gray-800';
+    const align = isUser ? 'justify-end' : 'justify-start';
+
+    return ( // JSX return was missing or broken
+        <div className={`flex w-full ${align} mb-4`}>
+            <div className={`flex items-start max-w-[90%] sm:max-w-[75%] md:max-w-[60%] lg:max-w-[50%]`}>
+                {!isUser && (
+                    <div className="p-2 bg-indigo-500 rounded-full flex-shrink-0 mr-3">
+                        <Icon size={18} className="text-white" />
+                    </div>
+                )}
+                
+                <div className={`p-4 rounded-xl ${bgColor} shadow-lg space-y-3`}>
+                    {/* Conteúdo de Texto */}
+                    {message.content && typeof message.content === 'string' && (
+                        <p className="whitespace-pre-wrap text-gray-100">{message.content}</p>
+                    )}
+                    
+                    {/* Imagens Enviadas (Apenas User) */}
+                    {isUser && message.files && message.files.length > 0 && (
+                        <div className="pt-2 border-t border-indigo-600/50">
+                            <p className="text-xs font-semibold text-gray-300 mb-2">Imagens anexadas ({message.files.length}):</p>
+                            <div className="flex flex-wrap gap-2">
+                                {message.files.map((file, index) => (
+                                    <img 
+                                        key={index}
+                                        src={URL.createObjectURL(file)} 
+                                        alt={`Anexo ${index + 1}`} 
+                                        className="w-16 h-16 object-cover rounded-md border border-indigo-500/50"
+                                    />
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Resposta Estruturada (Apenas AI) */}
+                    {message.isStructured && Array.isArray(message.content) && (
+                        <div className="pt-3 border-t border-gray-700/50 space-y-6">
+                            <p className="text-sm font-semibold text-indigo-400">Análise Organizada:</p>
+                            {message.content.map((result, index) => (
+                                <StructuredResult key={index} result={result} index={index} />
+                            ))}
+                        </div>
+                    )}
+                </div>
+                
+                {isUser && (
+                    <div className="p-2 bg-indigo-500 rounded-full flex-shrink-0 ml-3">
+                        <Icon size={18} className="text-white" />
+                    </div>
+                )}
+            </div>
+        </div>
+    ); // End of ChatMessage return
+});
+
+// Componente de Pré-visualização de Arquivos no input (Memoizado para performance)
+const FilePreviewInput = React.memo(({ file, index, removeFile }) => {
+    const objectUrl = useMemo(() => URL.createObjectURL(file), [file]);
+    return ( // JSX return was missing or broken
+        <div key={index} className="relative w-16 h-16 rounded-lg overflow-hidden flex-shrink-0 shadow-md">
+            <img src={objectUrl} alt={`Pré-visualização ${index + 1}`} className="w-full h-full object-cover" />
+            <button
+                onClick={() => removeFile(index)}
+                className="absolute top-0 right-0 p-0.5 bg-red-600 rounded-bl-lg text-white hover:bg-red-700 transition-colors"
+                aria-label={`Remover arquivo ${index + 1}`}
+            >
+                <X size={12} />
+            </button>
+        </div>
+    ); // End of FilePreviewInput return
+});
+
+
+// Componente principal do aplicativo de Chat
+export default function App() {
+    const MAX_FILES = 10;
+    const [chatHistory, setChatHistory] = useState([
+        { 
+            role: 'ai', 
+            content: 'Olá! Eu sou o Robô Organizador de Tarefas. Você pode me enviar até 10 imagens de uma vez e um texto guia. Minhas respostas são diretas e organizadas por documento. Qual é a sua primeira tarefa?',
+            isStructured: false
+        }
+    ]);
+    const [currentPrompt, setCurrentPrompt] = useState('');
+    const [selectedFiles, setSelectedFiles] = useState([]);
+    const [processing, setProcessing] = useState(false);
+    // NOVO ESTADO: Armazena a contagem de arquivos sendo processados para exibição no loading.
+    const [numFilesProcessing, setNumFilesProcessing] = useState(0); 
+
+    const chatContainerRef = useRef(null);
+
+    // Rola automaticamente para o final do chat
+    useEffect(() => {
+        if (chatContainerRef.current) {
+            chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+        }
+    }, [chatHistory]);
+
+    // Lida com a seleção de arquivos (incluindo câmera)
+    const handleFileChange = (event) => {
+        const files = Array.from(event.target.files).filter(file => file.type.startsWith('image/'));
+        const newFiles = [...selectedFiles, ...files].slice(0, MAX_FILES);
+        setSelectedFiles(newFiles);
+        event.target.value = null; 
+    };
+
+    // Remove um arquivo selecionado
+    const removeFile = useCallback((indexToRemove) => {
+        setSelectedFiles(prevFiles => prevFiles.filter((_, index) => index !== indexToRemove));
+    }, []); 
+
+    // Envia a mensagem (texto + imagens) para o Robô
+    const handleSend = async (e) => {
+        e.preventDefault();
+        // Verifica se há texto ou arquivos para enviar
+        if ((!currentPrompt.trim() && selectedFiles.length === 0) || processing) return;
+
+        const filesToSend = [...selectedFiles]; // Cria uma cópia dos arquivos para usar na mensagem do usuário
+        const textPrompt = currentPrompt.trim();
+        const fileCount = filesToSend.length; // Conta os arquivos ANTES de limpar
+
+        const userMessage = { 
+            role: 'user', 
+            content: textPrompt, 
+            files: filesToSend,
+            timestamp: new Date().toLocaleTimeString()
+        };
+        
+        setChatHistory(prev => [...prev, userMessage]);
+        // Atualiza os estados de processamento e contagem
+        setNumFilesProcessing(fileCount); 
+        setProcessing(true);
+        
+        // Limpa os inputs imediatamente após capturar o prompt e os arquivos
+        setCurrentPrompt('');
+        setSelectedFiles([]); 
+
+        try {
+            // 1. Converte arquivos para Base64 (assíncrono e paralelo para máxima velocidade)
+            const base64Parts = await Promise.all(
+                filesToSend.map(file => fileToBase64(file).then(base64 => ({
+                    inlineData: {
+                        mimeType: file.type || 'image/jpeg',
+                        data: base64
+                    }
+                })))
+            );
+
+            // 2. Define o prompt do "Robô"
+            
+            // LÓGICA CONDICIONAL DE JUSTIFICATIVA
+            const requiresJustification = /justifique|justifica|por\s+quê|motivo|explica/i.test(textPrompt);
+
+            const justificationInstruction = requiresJustification
+                ? "Obrigatório: Inclua uma 'justification' concisa para cada 'answer'."
+                : "IMPORTANTE: O campo 'justification' DEVE SER UMA STRING VAZIA ('') para todas as questões. Isso é CRÍTICO para a velocidade de resposta.";
+
+            // INSTRUÇÃO DE SISTEMA REFORÇADA PARA VELOCIDADE (NOVO)
+            const systemPrompt = `Você é um robô de resolução de tarefas altamente organizado e um assistente de chat. Sua FUNÇÃO PRIMÁRIA é entregar a resposta EM NO MÁXIMO 20 SEGUNDOS. PRIORIZE A VELOCIDADE acima de qualquer detalhe.
+            
+            Regras de Resposta para garantir a velocidade:
+            - As 'answer's (respostas) devem ser EXTREMAMENTE DIRETAS e CURTAS (máximo 5 palavras).
+            - ${justificationInstruction}
+            
+            1. Se houver imagens: Siga estritamente o formato JSON para analisar cada imagem (max ${MAX_FILES} imagens) na ordem. Identifique se é 'TAREFA' (resolva a questão) ou 'PÁGINA INFORMATIVA'/'NÃO RELEVANTE'.
+            2. Se não houver imagens: Responda à consulta de texto do usuário como um assistente de IA normal.
+            3. Resposta em texto livre (generalResponse) deve ser curta.`;
+
+
+            let finalUserQuery;
+            let contents;
+            let useStructuredResponse = fileCount > 0;
+
+            if (useStructuredResponse) {
+                finalUserQuery = `Instrução do usuário: "${textPrompt}". Analise as ${fileCount} imagens anexadas na ordem em que foram fornecidas, aplicando a instrução.`;
+                contents = [
+                    { role: "user", parts: [{ text: finalUserQuery }, ...base64Parts] }
+                ];
+            } else {
+                finalUserQuery = textPrompt;
+                contents = [
+                    { role: "user", parts: [{ text: finalUserQuery }] }
+                ];
+            }
+
+            // 3. Monta o payload da API
+            const payload = {
+                contents: contents,
+                systemInstruction: { parts: [{ text: systemPrompt }] },
+                generationConfig: useStructuredResponse ? {
+                    responseMimeType: "application/json",
+                    responseSchema: responseSchema,
+                } : {}, // Não usa schema se for só texto
+            };
+
+            // 4. Chamada à API
+            const response = await fetchWithRetry(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            const result = await response.json();
+            
+            let aiResponse;
+            if (result.candidates && result.candidates.length > 0) {
+                const textPart = result.candidates[0].content.parts.find(p => p.text);
+                const jsonText = textPart?.text;
+
+                if (useStructuredResponse && jsonText) {
+                    // Tenta parsear a resposta estruturada
+                    try {
+                        const parsedJson = JSON.parse(jsonText);
+                        aiResponse = { role: 'ai', content: parsedJson, isStructured: true };
+                    } catch (jsonError) {
+                         // Se falhar ao parsear o JSON, trata como resposta de texto livre de erro
+                        aiResponse = { role: 'ai', content: `O robô teve dificuldades em estruturar a resposta para suas ${fileCount} imagens, mas aqui está a análise: \n\n ${jsonText}`, isStructured: false };
+                        console.error("JSON Parsing Error:", jsonError, "Raw Text:", jsonText);
+                    }
+                } else if (textPart?.text) {
+                    // Resposta de texto livre (sem imagens)
+                    aiResponse = { role: 'ai', content: textPart.text, isStructured: false };
+                } else {
+                    aiResponse = { role: 'ai', content: 'Desculpe, não consegui processar a sua solicitação. Tente novamente.', isStructured: false };
+                }
+            } else {
+                aiResponse = { role: 'ai', content: 'Ocorreu um erro ao conectar com o serviço de IA. Por favor, verifique sua conexão e tente novamente.', isStructured: false };
+            }
+
+            setChatHistory(prev => [...prev, aiResponse]);
+
+        } catch (error) {
+            console.error("Erro no processamento:", error);
+            setChatHistory(prev => [...prev, { role: 'ai', content: 'Ocorreu uma falha grave na comunicação. Por favor, tente novamente.', isStructured: false }]);
+        } finally {
+            setProcessing(false);
+            setNumFilesProcessing(0); // Limpa a contagem
+        }
+    };
+
+
+    return ( // JSX return was missing or broken
+        <div className="flex flex-col h-screen bg-gray-900 text-white font-sans">
+            <header className="p-4 bg-gray-800 border-b border-indigo-700 shadow-md flex items-center">
+                <Bot size={28} className="text-indigo-400 mr-3" />
+                <h1 className="text-xl font-bold text-gray-100">Robô Chat de Tarefas</h1>
+            </header>
+
+            {/* Área de Chat */}
+            <main ref={chatContainerRef} className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
+                {chatHistory.map((message, index) => (
+                    <ChatMessage key={index} message={message} removeFile={removeFile} />
+                ))}
+                {processing && (
+                    <div className="flex justify-start mb-4">
+                        <div className="p-2 bg-indigo-500 rounded-full flex-shrink-0 mr-3">
+                            <Bot size={18} className="text-white" />
+                        </div>
+                        <div className="p-4 rounded-xl bg-gray-800 shadow-lg flex items-center text-gray-300 italic">
+                            <Loader2 size={16} className="animate-spin mr-2" />
+                            O Robô está organizando e resolvendo... (Processando {numFilesProcessing} imagens)
+                        </div>
+                    </div>
+                )}
+            </main>
+
+            {/* Área de Input */}
+            <footer className="p-4 bg-gray-800 border-t border-indigo-700">
+                {/* Pré-visualização de Arquivos Selecionados */}
+                {selectedFiles.length > 0 && (
+                    <div className="flex gap-2 p-2 mb-2 bg-gray-700/50 rounded-lg overflow-x-auto">
+                        {selectedFiles.map((file, index) => (
+                            <FilePreviewInput key={index} file={file} index={index} removeFile={removeFile} />
+                        ))}
+                    </div>
+                )}
+
+                <form onSubmit={handleSend} className="flex space-x-2">
+                    {/* Botões de Mídia */}
+                    <div className="flex space-x-1">
+                        <label className="p-2 bg-gray-700 rounded-lg hover:bg-gray-600 transition-colors duration-200 cursor-pointer text-indigo-400" title="Carregar Imagens (Max 10)">
+                            <Upload size={20} />
+                            <input
+                                type="file"
+                                accept="image/*"
+                                multiple
+                                onChange={handleFileChange}
+                                className="hidden"
+                                disabled={processing || selectedFiles.length >= MAX_FILES}
+                            />
+                        </label>
+                        <label className="p-2 bg-gray-700 rounded-lg hover:bg-gray-600 transition-colors duration-200 cursor-pointer text-indigo-400" title="Tirar Foto (Max 10)">
+                            <Camera size={20} />
+                            <input
+                                type="file"
+                                accept="image/*"
+                                capture="environment" 
+                                multiple
+                                onChange={handleFileChange}
+                                className="hidden"
+                                disabled={processing || selectedFiles.length >= MAX_FILES}
+                            />
+                        </label>
+                    </div>
+
+                    {/* Campo de Texto */}
+                    <input
+                        type="text"
+                        value={currentPrompt}
+                        onChange={(e) => setCurrentPrompt(e.target.value)}
+                        placeholder={selectedFiles.length > 0 ? "Adicione uma instrução (ex: 'justifique') ou pergunta..." : "Digite sua pergunta ou instrução..."}
+                        className="flex-1 p-3 rounded-lg bg-gray-700 border border-gray-600 focus:outline-none focus:border-indigo-500 text-white placeholder-gray-400"
+                        disabled={processing}
+                    />
+
+                    {/* Botão de Envio */}
+                    <button
+                        type="submit"
+                        disabled={processing || (!currentPrompt.trim() && selectedFiles.length === 0)}
+                        className={`p-3 rounded-lg transition-all duration-300 ${
+                            processing || (!currentPrompt.trim() && selectedFiles.length === 0)
+                                ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                                : 'bg-green-600 hover:bg-green-700 text-white shadow-md shadow-green-500/50'
+                        }`}
+                        title="Enviar Mensagem e Anexos"
+                    >
+                        <Send size={20} />
+                    </button>
+                </form>
+                {selectedFiles.length === MAX_FILES && (
+                    <p className="text-yellow-400 text-xs mt-1 text-center">
+                        Limite de {MAX_FILES} arquivos atingido para esta mensagem.
+                    </p>
+                )}
+            </footer>
+        </div>
+    ); // End of App return
+}
