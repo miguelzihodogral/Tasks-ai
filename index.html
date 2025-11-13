@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Robô Chat de Tarefas</title>
+    <!-- Carrega Tailwind CSS via CDN para estilização -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom scrollbar para melhor visual */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 8px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background-color: #4f46e5; /* indigo-600 */
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background-color: #1f2937; /* gray-800 */
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+    </style>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'indigo-700': '#4338ca',
+                        'indigo-800': '#3730a3',
+                        'indigo-900': '#312e81',
+                        'gray-900': '#111827',
+                        'gray-800': '#1f2937',
+                        'gray-700': '#374151',
+                        'green-450': '#4ade80', /* Cor entre 400 e 500 */
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-gray-900">
+
+    <div id="app" class="flex flex-col h-screen max-w-5xl mx-auto bg-gray-900 text-white shadow-2xl">
+
+        <header class="p-4 bg-gray-800 border-b border-indigo-700 shadow-md flex items-center">
+            <!-- Ícone Bot -->
+            <svg class="text-indigo-400 mr-3 w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.79 2-4 2s-4-.895-4-2 1.79-2 4-2 4 .895 4 2zM12 13V6"></path></svg>
+            <h1 class="text-xl font-bold text-gray-100">Robô Chat de Tarefas</h1>
+        </header>
+
+        <!-- Área de Chat -->
+        <main id="chat-container" class="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
+            <!-- Mensagens serão inseridas aqui pelo JavaScript -->
+        </main>
+
+        <!-- Área de Input -->
+        <footer class="p-4 bg-gray-800 border-t border-indigo-700">
+            <!-- Pré-visualização de Arquivos Selecionados -->
+            <div id="file-preview-container" class="flex gap-2 p-2 mb-2 bg-gray-700/50 rounded-lg overflow-x-auto hidden">
+                <!-- Pré-visualizações de arquivo serão inseridas aqui -->
+            </div>
+
+            <form id="chat-form" class="flex space-x-2">
+                <!-- Botões de Média -->
+                <div class="flex space-x-1">
+                    <label id="upload-label" class="p-2 bg-gray-700 rounded-lg hover:bg-gray-600 transition-colors duration-200 cursor-pointer text-indigo-400" title="Carregar Imagens (Max 10)">
+                        <!-- Ícone Upload -->
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                        <input type="file" id="file-input" accept="image/*" multiple class="hidden" />
+                    </label>
+                    <label id="camera-label" class="p-2 bg-gray-700 rounded-lg hover:bg-gray-600 transition-colors duration-200 cursor-pointer text-indigo-400" title="Tirar Foto (Max 10)">
+                        <!-- Ícone Camera -->
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.218A2 2 0 0110.59 4h2.82c.456 0 .907.126 1.284.362l.812 1.218A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                        <input type="file" id="camera-input" accept="image/*" capture="environment" multiple class="hidden" />
+                    </label>
+                </div>
+
+                <!-- Campo de Texto -->
+                <input
+                    type="text"
+                    id="prompt-input"
+                    placeholder="Digite sua pergunta ou instrução..."
+                    class="flex-1 p-3 rounded-lg bg-gray-700 border border-gray-600 focus:outline-none focus:border-indigo-500 text-white placeholder-gray-400"
+                />
+
+                <!-- Botão de Envio -->
+                <button
+                    type="submit"
+                    id="send-button"
+                    class="p-3 rounded-lg bg-gray-600 text-gray-400 cursor-not-allowed transition-all duration-300"
+                    disabled
+                >
+                    <!-- Ícone Send -->
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path></svg>
+                </button>
+            </form>
+            <p id="file-limit-message" class="text-indigo-400 text-xs mt-1 text-center hidden">
+                Limite de 10 arquivos atingido para esta mensagem.
+            </p>
+        </footer>
+
+    </div>
+
+    <script>
+        // === VARIÁVEIS GLOBAIS E CONFIGURAÇÕES ===
+        const MAX_FILES = 10;
+        const apiKey = ""; 
+        // Modelo para análise de imagem e texto
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+        // Modelo para a pesquisa (pode ser o mesmo, mas a URL se mantém)
+        const apiSearchUrl = apiUrl; 
+
+        let selectedFiles = [];
+        let processing = false;
+
+        // Referências DOM
+        const chatContainer = document.getElementById('chat-container');
+        const fileInput = document.getElementById('file-input');
+        const cameraInput = document.getElementById('camera-input');
+        const promptInput = document.getElementById('prompt-input');
+        const chatForm = document.getElementById('chat-form');
+        const sendButton = document.getElementById('send-button');
+        const filePreviewContainer = document.getElementById('file-preview-container');
+        const fileLimitMessage = document.getElementById('file-limit-message');
+        const uploadLabel = document.getElementById('upload-label');
+        const cameraLabel = document.getElementById('camera-label');
+
+        // Estrutura de dados para o resultado da análise (JSON schema)
+        const responseSchema = {
+            type: "ARRAY",
+            items: {
+                type: "OBJECT",
+                properties: {
+                    "fileName": { "type": "STRING", description: "Nome original do arquivo (e.g., Imagem 1)" },
+                    "type": { "type": "STRING", enum: ["TAREFA", "PÁGINA INFORMATIVA"], description: "TAREFA (se houver questões) ou PÁGINA INFORMATIVA (se for texto de apoio)" },
+                    "summary": { "type": "STRING", description: "Um breve resumo coeso do conteúdo, com referência clara (ex: 'Apostila X - Página 1 de 2' ou 'Introdução ao Capítulo 3')" },
+                    "items": {
+                        "type": "ARRAY",
+                        "description": "Array de pares pergunta/resposta, somente se type for TAREFA.",
+                        "items": {
+                            "type": "OBJECT",
+                            "properties": {
+                                "question": { "type": "STRING", description: "A pergunta extraída." },
+                                "answer": { "type": "STRING", description: "A resposta direta e curta à pergunta. Máximo 2 linhas." },
+                                "justification": { "type": "STRING", description: "Justificativa breve da resposta. VAZIA se não solicitada pelo usuário." }
+                            }
+                        }
+                    },
+                    "generalResponse": { "type": "STRING", description: "Uma resposta em texto livre se a imagem for 'PÁGINA INFORMATIVA' ou se houver um erro na análise. Ultra-concisa (máx. 3 linhas)." }
+                },
+                required: ["fileName", "type", "summary", "generalResponse"]
+            }
+        };
+
+
+        // === FUNÇÕES AUXILIARES ===
+
+        /**
+         * Converte um arquivo File em uma string Base64.
+         */
+        const fileToBase64 = (file) => {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = () => resolve(reader.result.split(',')[1]);
+                reader.onerror = (error) => reject(error);
+            });
+        };
+
+        /**
+         * Função auxiliar para retry com backoff exponencial
+         */
+        const fetchWithRetry = async (url, options, retries = 3) => {
+            for (let i = 0; i < retries; i++) {
+                try {
+                    const response = await fetch(url, options);
+                    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                    return response;
+                } catch (error) {
+                    if (i === retries - 1) throw error;
+                    // Espera antes de tentar novamente (1s, 2s, 4s)
+                    await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, i)));
+                }
+            }
+        };
+
+        /**
+         * Rola a área de chat para o fundo.
+         */
+        const scrollToBottom = () => {
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        };
+
+        /**
+         * Atualiza o estado visual do botão de envio e inputs.
+         */
+        const updateSendButtonState = () => {
+            const hasContent = promptInput.value.trim().length > 0 || selectedFiles.length > 0;
+            const isDisabled = processing || !hasContent;
+
+            sendButton.disabled = isDisabled;
+            promptInput.disabled = processing;
+
+            if (isDisabled) {
+                sendButton.classList.remove('bg-green-600', 'hover:bg-green-700', 'shadow-md', 'shadow-green-500/50');
+                sendButton.classList.add('bg-gray-600', 'text-gray-400', 'cursor-not-allowed');
+            } else {
+                sendButton.classList.remove('bg-gray-600', 'text-gray-400', 'cursor-not-allowed');
+                sendButton.classList.add('bg-green-600', 'hover:bg-green-700', 'shadow-md', 'shadow-green-500/50');
+            }
+            
+            // Atualiza o estado dos botões de mídia
+            const isLimitReached = selectedFiles.length >= MAX_FILES;
+            const buttonClasses = isLimitReached ? 'bg-gray-600 text-gray-400 cursor-not-allowed' : 'bg-gray-700 hover:bg-gray-600 text-indigo-400 cursor-pointer';
+
+            uploadLabel.className = uploadLabel.className.replace(/bg-.*?( |$)/g, '') + ' p-2 rounded-lg transition-colors duration-200 ' + buttonClasses;
+            cameraLabel.className = cameraLabel.className.replace(/bg-.*?( |$)/g, '') + ' p-2 rounded-lg transition-colors duration-200 ' + buttonClasses;
+
+            fileInput.disabled = isLimitReached || processing;
+            cameraInput.disabled = isLimitReached || processing;
+
+            if (isLimitReached) {
+                fileLimitMessage.classList.remove('hidden');
+            } else {
+                fileLimitMessage.classList.add('hidden');
+            }
+        };
+        
+        // === RENDERIZAÇÃO DE ELEMENTOS ===
+
+        /**
+         * Cria e retorna o HTML para um resultado de análise estruturada.
+         */
+        const createStructuredResultElement = (result, index) => {
+            const isTask = result.type === 'TAREFA';
+            
+            // Ajustes para as cores do exemplo:
+            const elementBgColor = 'bg-gray-800'; // Fundo mais escuro
+            const elementBorderColor = 'border-indigo-700';
+            const titleColor = isTask ? 'text-green-450' : 'text-indigo-400';
+            const generalTextColor = 'text-gray-300';
+            
+            // Ícone Livro/Apostila para TAREFA
+            const IconSVG = isTask 
+                ? '<svg class="text-green-450 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5s3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18s3.332.477 4.5 1.253"></path></svg>'
+                : '<svg class="text-indigo-400 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>';
+
+            let contentHTML;
+
+            if (isTask && result.items && result.items.length > 0) {
+                const itemsHTML = result.items.map((item, qIndex) => {
+                    // Se justification não for string vazia ou '-', mostra.
+                    const justification = item.justification && item.justification.trim() !== '' && item.justification.trim() !== '-'
+                        ? `<p class="text-xs text-gray-400 italic mt-2 ml-5"><span class="font-semibold text-gray-300">Justificativa:</span> ${item.justification}</p>`
+                        : '';
+
+                    // Estrutura de Pergunta (Q1:)
+                    let questionHTML = `
+                        <p class="font-bold text-gray-300 text-base mb-2">
+                            Q${qIndex + 1}: ${item.question}
+                        </p>
+                    `;
+                    
+                    // Estrutura da RESPOSTA (com background azul e checkmark)
+                    let answerHTML = `
+                        <div class="bg-indigo-800 p-3 rounded-lg mt-3">
+                            <p class="text-green-450 font-bold text-sm mb-1 flex items-center">
+                                <svg class="w-4 h-4 mr-1 text-green-450" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> Resposta:
+                            </p>
+                            <p class="text-white text-sm whitespace-pre-wrap ml-5">${item.answer}</p>
+                        </div>
+                        ${justification}
+                    `;
+
+                    return `<div>${questionHTML}${answerHTML}</div>`;
+                }).join('');
+                contentHTML = `<div class="space-y-4">${itemsHTML}</div>`;
+            } else { // Caso de 'PÁGINA INFORMATIVA' ou falha
+                contentHTML = `<p class="${generalTextColor} text-sm italic">${result.generalResponse}</p>`;
+            }
+
+            const element = document.createElement('div');
+            // Aplica as cores de fundo e borda ao elemento
+            element.className = `${elementBgColor} p-4 rounded-xl shadow-xl border border-indigo-900`;
+            element.innerHTML = `
+                <div class="flex items-center space-x-2 mb-3">
+                    ${IconSVG}
+                    <h4 class="text-base font-bold ${titleColor}">
+                        ${result.type} <span class="text-gray-300 font-semibold text-sm">(${result.summary})</span>
+                    </h4>
+                    <span class="text-xs text-gray-400 ml-auto">(${result.fileName})</span>
+                </div>
+                ${contentHTML}
+            `;
+            return element;
+        };
+        
+        /**
+         * Adiciona uma mensagem ao chat.
+         */
+        const renderChatMessage = (message) => {
+            const isUser = message.role === 'user';
+            const align = isUser ? 'justify-end' : 'justify-start';
+            
+            const IconSVG = isUser
+                ? '<svg class="text-white w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>'
+                : '<svg class="text-white w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.79 2-4 2s-4-.895-4-2 1.79-2 4-2 4 .895 4 2zM12 13V6"></path></svg>';
+                
+            const messageWrapper = document.createElement('div');
+            messageWrapper.className = `flex w-full ${align} mb-4`;
+            
+            // Manteve-se o max-w maior (75%) para permitir a expansão horizontal
+            const innerContent = document.createElement('div');
+            innerContent.className = `flex items-start max-w-[95%] sm:max-w-[85%] md:max-w-[75%] lg:max-w-[75%]`;
+            
+            const iconWrapper = document.createElement('div');
+            // Cor do avatar da IA no exemplo parece ser um azul escuro/roxo
+            iconWrapper.className = "p-2 bg-indigo-700 rounded-full flex-shrink-0 " + (isUser ? 'ml-3' : 'mr-3'); 
+            iconWrapper.innerHTML = IconSVG;
+
+            const contentBox = document.createElement('div');
+            
+            // Cores: User é índigo, AI é transparente para a análise organizada
+            const boxColor = isUser ? 'bg-indigo-700' : 'bg-transparent'; 
+            const textColor = 'text-gray-100';
+
+            contentBox.className = `p-0 shadow-lg space-y-3 ${boxColor} ${isUser ? 'rounded-xl' : ''}`;
+            
+            // 1. Conteúdo de Texto (se for apenas texto ou a introdução da IA)
+            if (message.content && typeof message.content === 'string') {
+                const textP = document.createElement('p');
+                // AI SEM ESTRUTURA (pesquisa ou texto livre)
+                const aiTextStyle = isUser ? 'bg-indigo-700' : 'bg-gray-800 border border-indigo-700';
+                
+                textP.className = `whitespace-pre-wrap p-4 rounded-xl ${aiTextStyle} ${textColor}`; 
+                textP.textContent = message.content;
+                contentBox.appendChild(textP);
+            }
+
+            // 2. Imagens Enviadas (Apenas User) - Manter o estilo da foto (fundo escuro azulado)
+            if (isUser && message.files && message.files.length > 0) {
+                const fileContainer = document.createElement('div');
+                // Fundo azulado escuro para os anexos do usuário, como na imagem de referência
+                fileContainer.className = "p-3 rounded-xl bg-indigo-900 border border-indigo-700 shadow-lg";
+                
+                const filesP = document.createElement('p');
+                filesP.className = "text-xs font-semibold text-indigo-400 mb-2";
+                filesP.textContent = `Imagens anexadas (${message.files.length}):`;
+                fileContainer.appendChild(filesP);
+
+                const imgFlex = document.createElement('div');
+                imgFlex.className = "flex flex-wrap gap-2";
+
+                message.files.forEach((file, index) => {
+                    const img = document.createElement('img');
+                    img.src = URL.createObjectURL(file);
+                    img.alt = `Anexo ${index + 1}`;
+                    img.className = "w-16 h-16 object-cover rounded-md border border-indigo-500/50";
+                    imgFlex.appendChild(img);
+                });
+                
+                fileContainer.appendChild(imgFlex);
+                contentBox.appendChild(fileContainer);
+            }
+
+            // 3. Resposta Estruturada (Apenas AI) - Estilo "Análise Organizada"
+            if (!isUser && message.isStructured && Array.isArray(message.content)) {
+                const structuredWrapper = document.createElement('div');
+                // Fundo da Análise (caixa principal)
+                structuredWrapper.className = "bg-gray-800 p-4 rounded-xl shadow-xl border border-indigo-700 space-y-4"; 
+                
+                const titleP = document.createElement('p');
+                titleP.className = "text-sm font-bold text-indigo-400 border-b border-indigo-700 pb-2 mb-2 flex items-center";
+                
+                // Ícone para "Análise Organizada"
+                titleP.innerHTML = `
+                    <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                    Análise Organizada:
+                `;
+                structuredWrapper.appendChild(titleP);
+
+                message.content.forEach((result, index) => {
+                    const resultElement = createStructuredResultElement(result, index);
+                    structuredWrapper.appendChild(resultElement);
+                });
+
+                // Substitui o contentBox inteiro pelo wrapper estruturado para a AI
+                contentBox.className = "p-0 space-y-3";
+                contentBox.appendChild(structuredWrapper);
+            }
+
+            // Montagem final
+            if (!isUser) {
+                innerContent.appendChild(iconWrapper);
+            }
+            innerContent.appendChild(contentBox);
+            if (isUser) {
+                innerContent.appendChild(iconWrapper);
+            }
+            
+            messageWrapper.appendChild(innerContent);
+            chatContainer.appendChild(messageWrapper);
+            scrollToBottom();
+        };
+
+        /**
+         * Adiciona um indicador de processamento/loading.
+         */
+        const renderLoadingIndicator = (fileCount) => {
+            const loadingDiv = document.createElement('div');
+            loadingDiv.id = 'loading-indicator';
+            loadingDiv.className = 'flex justify-start mb-4';
+            
+            const message = fileCount > 0 
+                ? `O Robô está organizando e resolvendo... (Processando ${fileCount} imagens)`
+                : `O Robô está pesquisando na web...`;
+                
+            loadingDiv.innerHTML = `
+                <div class="p-2 bg-indigo-700 rounded-full flex-shrink-0 mr-3">
+                    <svg class="text-white w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.79 2-4 2s-4-.895-4-2 1.79-2 4-2 4 .895 4 2zM12 13V6"></path></svg>
+                </div>
+                <div class="p-4 rounded-xl bg-gray-800 shadow-lg flex items-center text-gray-300 italic border border-indigo-700">
+                    <svg class="w-4 h-4 animate-spin mr-2 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.34 3.732m.256 12.385l-1.353 1.353C1.65 18.59 2.45 20.35 4.3 20.7a9 9 0 0015.65-4.437"></path></svg>
+                    ${message}
+                </div>
+            `;
+            chatContainer.appendChild(loadingDiv);
+            scrollToBottom();
+        };
+
+        /**
+         * Remove o indicador de processamento/loading.
+         */
+        const removeLoadingIndicator = () => {
+            const loadingDiv = document.getElementById('loading-indicator');
+            if (loadingDiv) {
+                loadingDiv.remove();
+            }
+        };
+
+        /**
+         * Atualiza a área de pré-visualização de arquivos.
+         */
+        const updateFilePreview = () => {
+            filePreviewContainer.innerHTML = '';
+            
+            if (selectedFiles.length === 0) {
+                filePreviewContainer.classList.add('hidden');
+                return;
+            }
+
+            filePreviewContainer.classList.remove('hidden');
+
+            selectedFiles.forEach((file, index) => {
+                const objectUrl = URL.createObjectURL(file);
+                
+                const previewDiv = document.createElement('div');
+                previewDiv.className = "relative w-16 h-16 rounded-lg overflow-hidden flex-shrink-0 shadow-md";
+                previewDiv.innerHTML = `
+                    <img src="${objectUrl}" alt="Pré-visualização ${index + 1}" class="w-full h-full object-cover" />
+                    <button data-index="${index}" class="remove-file-btn absolute top-0 right-0 p-0.5 bg-red-600 rounded-bl-lg text-white hover:bg-red-700 transition-colors" aria-label="Remover arquivo ${index + 1}">
+                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    </button>
+                `;
+                filePreviewContainer.appendChild(previewDiv);
+            });
+            updateSendButtonState();
+        };
+        
+        // === HANDLERS DE EVENTOS ===
+        
+        /**
+         * Remove um arquivo selecionado.
+         */
+        const handleRemoveFile = (indexToRemove) => {
+            selectedFiles = selectedFiles.filter((_, index) => index !== indexToRemove);
+            updateFilePreview();
+        };
+
+        /**
+         * Lida com a seleção de arquivos (input e camera).
+         */
+        const handleFileChange = (event) => {
+            const files = Array.from(event.target.files).filter(file => file.type.startsWith('image/'));
+            selectedFiles = [...selectedFiles, ...files].slice(0, MAX_FILES);
+            event.target.value = null; // Limpa o input para permitir o upload do mesmo arquivo
+            updateFilePreview();
+        };
+
+        /**
+         * Lida com o envio da mensagem.
+         */
+        const handleSend = async (e) => {
+            e.preventDefault();
+
+            const textPrompt = promptInput.value.trim();
+            const filesToSend = [...selectedFiles];
+            const fileCount = filesToSend.length;
+            
+            const useStructuredResponse = fileCount > 0; // Usa resposta JSON SÓ SE HOUVER IMAGENS
+
+            // Verifica se há conteúdo ou se já está processando
+            if ((!textPrompt && fileCount === 0) || processing) return;
+
+            // 1. Atualiza estados e UI
+            processing = true;
+            updateSendButtonState();
+            
+            // Renderiza mensagem do usuário
+            renderChatMessage({ role: 'user', content: textPrompt, files: filesToSend });
+            renderLoadingIndicator(fileCount);
+
+            // Limpa inputs
+            promptInput.value = '';
+            selectedFiles = [];
+            updateFilePreview();
+            
+            try {
+                // 2. Converte arquivos para Base64 (assíncrono e paralelo)
+                let base64Parts = [];
+                if (useStructuredResponse) {
+                    base64Parts = await Promise.all(
+                        filesToSend.map(file => fileToBase64(file).then(base64 => ({
+                            inlineData: {
+                                mimeType: file.type || 'image/jpeg',
+                                data: base64
+                            }
+                        })))
+                    );
+                }
+
+                // 3. Define prompt e payload
+                
+                const systemPrompt = useStructuredResponse ? 
+                    `Você é um robô de resolução de tarefas altamente organizado e um assistente de chat.
+                    
+Regras de Velocidade, Concisão e Completude (PRIORIDADE MÁXIMA):
+- A resposta (incluindo 'answer' e 'generalResponse') deve ter **NO MÁXIMO DUAS LINHAS DE TEXTO (2)**.
+- **TRÊS LINHAS (3) É O LIMITE MÁXIMO, INEGOCIÁVEL.** Force a síntese extrema para caber em 2 linhas.
+- O CONTEÚDO DA RESPOSTA DEVE SER 100% COMPLETO E CORRETO, sem cortar informações cruciais. Se a resposta completa não couber em 3 linhas, O MODELO DEVE FORÇAR A MÁXIMA SÍNTESE para caber no limite, NUNCA CORTANDO A INFORMAÇÃO CRUCIAL.
+- Sua FUNÇÃO PRIMÁRIA é entregar a resposta EM NO MÁXIMO 20 SEGUNDOS.
+
+Regras de Análise Estruturada:
+- ELIMINE o tipo 'NÃO RELEVANTE'. Todas as imagens são 'TAREFA' (se contiverem perguntas) ou 'PÁGINA INFORMATIVA' (se for texto/diagrama de apoio).
+- **ANÁLISE MODULAR E REFERENCIADA:** Trate CADA IMAGEM como um módulo de informação INDEPENDENTE. No 'summary' ou na 'question', FAÇA REFERÊNCIA CLARA AO ÍNDICE/NOME DO ARQUIVO (ex: 'Apostila X - Página 1 de 2' ou 'Introdução ao Capítulo 3') para manter a coerência e organização.
+- **PROATIVIDADE (SEM PROMPT):** Se o prompt do usuário for VAZIO ("${textPrompt}" é vazio), você DEVE analisar, extrair e resolver TODAS as tarefas que encontrar proativamente nas imagens.
+
+Regra Crucial de Justificativa:
+- A 'justification' SÓ DEVE ser preenchida (com texto conciso e em até 3 linhas) se:
+    a) A instrução no texto do usuário for: "${textPrompt}" (o que inclui 'justifique', 'por que', 'explique', etc.).
+    b) A pergunta extraída da IMAGEM explicitamente contiver as palavras "justifique" ou "justifique sua resposta".
+- Em TODOS os outros casos (onde a justificativa NÃO é solicitada por (a) ou (b)), o campo 'justification' DEVE SER UMA STRING VAZIA ('').
+                
+Fluxo de Trabalho:
+1. Se houver imagens: Siga estritamente o formato JSON para analisar cada imagem (max ${MAX_FILES} imagens) na ordem em que foram fornecidas, aplicando a instrução.
+2. Resposta em texto livre (generalResponse) deve ser curta, mas gramaticalmente completa.` 
+                : 
+                `Você é um assistente de IA conciso. Responda à pergunta do usuário: "${textPrompt}" de forma ultra-concisa e direta. A resposta deve ter NO MÁXIMO 3 LINHAS, e usar o Google Search para obter informações atualizadas.`;
+                
+                let contents;
+                let tools = [];
+
+                if (useStructuredResponse) {
+                    const finalUserQuery = `Instrução do usuário: "${textPrompt}". Analise as ${fileCount} imagens anexadas na ordem em que foram fornecidas, aplicando a instrução.`;
+                    contents = [
+                        { role: "user", parts: [{ text: finalUserQuery }, ...base64Parts] }
+                    ];
+                } else {
+                    // Sem imagens, usa apenas o prompt de texto e habilita o Google Search
+                    contents = [
+                        { role: "user", parts: [{ text: textPrompt }] }
+                    ];
+                    // Habilita a pesquisa na web (Google Search)
+                    tools = [{ "google_search": {} }];
+                }
+
+                const payload = {
+                    contents: contents,
+                    systemInstruction: { parts: [{ text: systemPrompt }] },
+                    tools: tools,
+                    // SOMENTE adiciona generationConfig com responseSchema SE for structured (com imagens)
+                    generationConfig: useStructuredResponse ? {
+                        responseMimeType: "application/json",
+                        responseSchema: responseSchema,
+                    } : {},
+                };
+
+                // 4. Chamada à API
+                const response = await fetchWithRetry(useStructuredResponse ? apiUrl : apiSearchUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const result = await response.json();
+                
+                let aiResponse;
+                if (result.candidates && result.candidates.length > 0) {
+                    const textPart = result.candidates[0].content.parts.find(p => p.text);
+                    let responseText = textPart?.text;
+
+                    if (useStructuredResponse && responseText) {
+                        try {
+                            // Correção para remover wrapper de código markdown se presente (ex: ```json...)
+                            let cleanJsonText = responseText.trim();
+                            if (cleanJsonText.startsWith('```json')) {
+                                cleanJsonText = cleanJsonText.substring('```json'.length);
+                            }
+                            if (cleanJsonText.endsWith('```')) {
+                                cleanJsonText = cleanJsonText.substring(0, cleanJsonText.length - '```'.length);
+                            }
+                            
+                            const parsedJson = JSON.parse(cleanJsonText.trim());
+                            aiResponse = { role: 'ai', content: parsedJson, isStructured: true };
+
+                        } catch (jsonError) {
+                            // Em caso de falha de parse, envia o texto bruto como resposta simples
+                            console.error("JSON Parsing Error - Falling back to raw text:", jsonError, "Raw Text:", responseText);
+                            aiResponse = { role: 'ai', content: responseText, isStructured: false };
+                        }
+                    } else if (responseText) {
+                        // Resposta de texto livre (sem imagens ou falha de JSON)
+                        aiResponse = { role: 'ai', content: responseText, isStructured: false };
+                    } else {
+                        aiResponse = { role: 'ai', content: 'Desculpe, não consegui processar a sua solicitação. Tente novamente.', isStructured: false };
+                    }
+                } else {
+                    aiResponse = { role: 'ai', content: 'Ocorreu um erro ao conectar com o serviço de IA. Por favor, verifique sua conexão e tente novamente.', isStructured: false };
+                }
+
+                // 5. Renderiza a resposta da AI
+                removeLoadingIndicator(); // Remove o loading antes de renderizar a resposta
+                renderChatMessage(aiResponse);
+
+            } catch (error) {
+                console.error("Erro no processamento:", error);
+                removeLoadingIndicator();
+                renderChatMessage({ role: 'ai', content: 'Ocorreu uma falha grave na comunicação. Por favor, tente novamente.', isStructured: false });
+            } finally {
+                processing = false;
+                updateSendButtonState();
+            }
+        };
+        
+        // === INICIALIZAÇÃO ===
+        window.onload = () => {
+            // Adiciona a mensagem de boas-vindas inicial
+            renderChatMessage({ 
+                role: 'ai', 
+                content: 'Sou o Robô de Tarefas. Envie até 10 imagens para análise. Sem imagens, eu farei uma pesquisa na web (com respostas de no máximo 3 linhas).',
+                isStructured: false
+            });
+            
+            // Adiciona listeners
+            fileInput.addEventListener('change', handleFileChange);
+            cameraInput.addEventListener('change', handleFileChange);
+            chatForm.addEventListener('submit', handleSend);
+            
+            // Listener para o input de texto, para habilitar/desabilitar o botão de envio
+            promptInput.addEventListener('input', updateSendButtonState);
+            
+            // Listener para os botões de remover arquivo na pré-visualização
+            filePreviewContainer.addEventListener('click', (e) => {
+                if (e.target.closest('.remove-file-btn')) {
+                    const button = e.target.closest('.remove-file-btn');
+                    const index = parseInt(button.getAttribute('data-index'));
+                    handleRemoveFile(index);
+                }
+            });
+            
+            // Atualiza o estado inicial do botão
+            updateSendButtonState();
+        };
+
+    </script>
+</body>
+</html>
